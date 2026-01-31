@@ -188,7 +188,7 @@ onMounted(() => {
 .articles-management {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 24px 32px;
+    padding: 24px 32px; 
     min-height: 60vh;
 }
 
