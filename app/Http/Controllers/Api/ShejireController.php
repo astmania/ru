@@ -49,12 +49,14 @@ class ShejireController extends Controller
     }
 
     /**
-     * Одно дерево по id (публично если approved, иначе только владелец)
+     * Одно дерево по id (публично если approved, иначе владелец или админ/супер-админ)
      */
     public function show(Request $request, ShejireTree $shejire)
     {
         $user = $request->user();
-        if (!$shejire->isApproved() && (!$user || $shejire->user_id !== $user->id)) {
+        $canView = $shejire->isApproved()
+            || ($user && ($shejire->user_id === $user->id || $user->isAdmin() || $user->isSuperAdmin()));
+        if (!$canView) {
             return response()->json(['message' => 'Дерево не найдено или ожидает модерации'], 404);
         }
 
