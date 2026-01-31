@@ -170,6 +170,78 @@ sudo ./update.sh
 
 ---
 
+## Часть 5. Решение проблем
+
+### Ошибка 500 на API и предупреждение о правах на ключ OAuth
+
+Если в браузере появляется сообщение вида *"Key file ... oauth-public.key permissions are not correct, recommend changing to 600 or 660 instead of 777"* и при этом запросы к `/api/shejire` (или другим защищённым API) возвращают **500 Internal Server Error**, исправьте права на ключи Passport на сервере:
+
+```bash
+cd /путь/к/проекту
+
+chmod 600 storage/oauth-private.key
+chmod 600 storage/oauth-public.key
+
+# Владелец — пользователь веб-сервера (www-data, apache и т.п.)
+sudo chown www-data:www-data storage/oauth-private.key storage/oauth-public.key
+```
+
+После этого перезагрузите страницу и повторите действие.
+
+### Class "PDO" not found
+
+Ошибка означает, что на сервере не установлены или не подключены расширения PHP для работы с БД. Установите их (подставьте свою версию PHP вместо `8.2`):
+
+```bash
+sudo apt update
+sudo apt install php8.2-pdo php8.2-mysql   # для MySQL
+# или для SQLite: php8.2-sqlite3
+sudo systemctl restart apache2   # или nginx + php-fpm
+```
+
+Проверка: `php -m | grep -E 'pdo|mysql'`.
+
+### База данных: файл SQLite не найден
+
+Если в логах: *"Database file at path [...]/database/database.sqlite does not exist"*:
+
+- **Используете MySQL** — в `.env` на сервере должно быть:
+  `DB_CONNECTION=mysql`, а также `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. После правок:
+  ```bash
+  php artisan config:clear
+  ```
+- **Используете SQLite** — создайте файл и дайте права веб-серверу:
+  ```bash
+  touch database/database.sqlite
+  sudo chown www-data:www-data database/database.sqlite
+  php artisan migrate --force
+  ```
+
+### No application encryption key has been specified
+
+В `.env` должен быть задан `APP_KEY`. Если его нет или он пустой:
+
+```bash
+cd /путь/к/проекту
+php artisan key:generate
+```
+
+Ключ будет записан в `.env`. Затем: `php artisan config:clear`.
+
+### Vite manifest not found (manifest.json)
+
+Фронтенд не собран: в `public/build` нет файлов Vite. На сервере в корне проекта выполните:
+
+```bash
+cd /путь/к/проекту
+npm ci
+npm run build
+```
+
+После сборки появятся `public/build/manifest.json` и скомпилированные JS/CSS. При необходимости задайте владельца: `sudo chown -R www-data:www-data public/build`.
+
+---
+
 ## Ссылки
 
 - [README.md](README.md) — описание проекта и быстрый старт

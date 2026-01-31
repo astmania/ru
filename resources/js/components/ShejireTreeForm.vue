@@ -227,6 +227,17 @@ function closeNodeModal() {
     editingNode.value = null;
 }
 
+function showSaveError(err, context) {
+    const msg = err.response?.data?.message || 'Ошибка сохранения';
+    const errors = err.response?.data?.errors;
+    const details = errors
+        ? Object.entries(errors)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .join('\n')
+        : '';
+    alert(context ? `${msg} (персона: ${context})${details ? '\n' + details : ''}` : (details ? msg + '\n' + details : msg));
+}
+
 function submitNode() {
     const payload = {
         full_name: nodeForm.full_name.trim(),
@@ -304,24 +315,49 @@ async function save() {
             let remaining = [...nodes.value];
             while (remaining.length) {
                 const batch = remaining.filter((n) => !n.parent_id || idMap[n.parent_id]);
-                if (!batch.length) break;
+                if (!batch.length) {
+                    // Запасной вариант: если из-за порядка/связей batch пуст — сохраняем оставшихся как корневые
+                    for (const node of remaining) {
+                        try {
+                            const { data: created } = await api.post(`/shejire/${treeIdNew}/nodes`, {
+                                full_name: node.full_name,
+                                birth_date: node.birth_date || null,
+                                death_date: node.death_date || null,
+                                parent_id: null,
+                                moderator_comment: node.moderator_comment || null,
+                            });
+                            idMap[node.id] = created.id;
+                        } catch (err) {
+                            showSaveError(err, node.full_name);
+                            throw err;
+                        }
+                    }
+                    remaining = [];
+                    break;
+                }
                 for (const node of batch) {
                     const parentId = node.parent_id ? idMap[node.parent_id] : null;
-                    const { data: created } = await api.post(`/shejire/${treeIdNew}/nodes`, {
-                        full_name: node.full_name,
-                        birth_date: node.birth_date || null,
-                        death_date: node.death_date || null,
-                        parent_id: parentId,
-                        moderator_comment: node.moderator_comment || null,
-                    });
-                    idMap[node.id] = created.id;
+                    try {
+                        const { data: created } = await api.post(`/shejire/${treeIdNew}/nodes`, {
+                            full_name: node.full_name,
+                            birth_date: node.birth_date || null,
+                            death_date: node.death_date || null,
+                            parent_id: parentId,
+                            moderator_comment: node.moderator_comment || null,
+                        });
+                        idMap[node.id] = created.id;
+                    } catch (err) {
+                        showSaveError(err, node.full_name);
+                        throw err;
+                    }
                 }
                 remaining = remaining.filter((n) => !idMap[n.id]);
             }
             router.push(`/shejire/${treeIdNew}`);
         }
     } catch (e) {
-        alert(e.response?.data?.message || 'Ошибка сохранения');
+        if (!e.response) throw e;
+        showSaveError(e);
     } finally {
         saving.value = false;
     }

@@ -11,6 +11,21 @@ use Illuminate\Support\Facades\Validator;
 class ShejireController extends Controller
 {
     /**
+     * Проверка: пользователь может редактировать дерево (владелец, администратор или супер-админ).
+     */
+    private function canManageTree(Request $request, ShejireTree $shejire): bool
+    {
+        $user = $request->user();
+        if (!$user) {
+            return false;
+        }
+        if ($shejire->user_id === $user->id) {
+            return true;
+        }
+        return $user->isAdmin() || $user->isSuperAdmin();
+    }
+
+    /**
      * Список одобренных деревьев (публичный)
      */
     public function index(Request $request)
@@ -78,7 +93,7 @@ class ShejireController extends Controller
      */
     public function update(Request $request, ShejireTree $shejire)
     {
-        if ($shejire->user_id !== $request->user()->id) {
+        if (!$this->canManageTree($request, $shejire)) {
             return response()->json(['message' => 'Доступ запрещен'], 403);
         }
 
@@ -111,7 +126,7 @@ class ShejireController extends Controller
      */
     public function destroy(Request $request, ShejireTree $shejire)
     {
-        if ($shejire->user_id !== $request->user()->id) {
+        if (!$this->canManageTree($request, $shejire)) {
             return response()->json(['message' => 'Доступ запрещен'], 403);
         }
 
@@ -124,7 +139,7 @@ class ShejireController extends Controller
      */
     public function storeNode(Request $request, ShejireTree $shejire)
     {
-        if ($shejire->user_id !== $request->user()->id) {
+        if (!$this->canManageTree($request, $shejire)) {
             return response()->json(['message' => 'Доступ запрещен'], 403);
         }
         if ($shejire->isApproved()) {
@@ -136,8 +151,24 @@ class ShejireController extends Controller
             ]);
         }
 
-        $validator = Validator::make($request->all(), [
-            'parent_id' => 'nullable|exists:shejire_nodes,id',
+        $input = $request->all();
+        // Нормализация пустых строк в null, чтобы валидация date не падала на ""
+        foreach (['parent_id', 'birth_date', 'death_date', 'moderator_comment'] as $key) {
+            if (isset($input[$key]) && $input[$key] === '') {
+                $input[$key] = null;
+            }
+        }
+
+        $validator = Validator::make($input, [
+            'parent_id' => [
+                'nullable',
+                'exists:shejire_nodes,id',
+                function ($attribute, $value, $fail) use ($shejire) {
+                    if ($value && ShejireNode::where('id', $value)->where('shejire_tree_id', $shejire->id)->doesntExist()) {
+                        $fail('Родитель должен принадлежать этому дереву.');
+                    }
+                },
+            ],
             'full_name' => 'required|string|max:255',
             'birth_date' => 'nullable|date',
             'death_date' => 'nullable|date|after_or_equal:birth_date',
@@ -155,7 +186,7 @@ class ShejireController extends Controller
         $data = $validator->validated();
         $data['shejire_tree_id'] = $shejire->id;
         $data['parent_id'] = $data['parent_id'] ?? null;
-        $data['sort_order'] = $data['sort_order'] ?? $shejire->nodes()->max('sort_order') + 1;
+        $data['sort_order'] = $data['sort_order'] ?? (($shejire->nodes()->max('sort_order') ?? 0) + 1);
 
         $node = ShejireNode::create($data);
 
@@ -170,7 +201,7 @@ class ShejireController extends Controller
         if ($node->shejire_tree_id !== $shejire->id) {
             return response()->json(['message' => 'Узел не принадлежит этому дереву'], 404);
         }
-        if ($shejire->user_id !== $request->user()->id) {
+        if (!$this->canManageTree($request, $shejire)) {
             return response()->json(['message' => 'Доступ запрещен'], 403);
         }
         if ($shejire->isApproved()) {
@@ -182,7 +213,14 @@ class ShejireController extends Controller
             ]);
         }
 
-        $validator = Validator::make($request->all(), [
+        $input = $request->all();
+        foreach (['parent_id', 'birth_date', 'death_date', 'moderator_comment'] as $key) {
+            if (isset($input[$key]) && $input[$key] === '') {
+                $input[$key] = null;
+            }
+        }
+
+        $validator = Validator::make($input, [
             'parent_id' => 'nullable|exists:shejire_nodes,id',
             'full_name' => 'sometimes|required|string|max:255',
             'birth_date' => 'nullable|date',
@@ -211,7 +249,7 @@ class ShejireController extends Controller
         if ($node->shejire_tree_id !== $shejire->id) {
             return response()->json(['message' => 'Узел не принадлежит этому дереву'], 404);
         }
-        if ($shejire->user_id !== $request->user()->id) {
+        if (!$this->canManageTree($request, $shejire)) {
             return response()->json(['message' => 'Доступ запрещен'], 403);
         }
         if ($shejire->isApproved()) {
